@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>モンドリアンコンバーター</title>
+<style>
+  :root{
+    --ink:#141414; --paper:#f4efe4; --white:#fafaf7;
+    --red:#e30613; --blue:#0047ab; --yellow:#ffcf00;
+    color-scheme:light;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif; }
+  header{ background:var(--ink); color:#fff; padding:14px 20px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header h1{ font-size:20px; margin:0; letter-spacing:.08em; }
+  header .chips{ display:flex; gap:6px; margin-left:auto; }
+  header .chip{ width:26px; height:26px; border:3px solid #fff; }
+  .wrap{ max-width:1060px; margin:0 auto; padding:18px 14px 40px; }
+  .tabs{ display:flex; gap:12px; margin-bottom:16px; }
+  .tab{ flex:1; padding:14px 10px; font-size:16px; font-weight:700; letter-spacing:.05em;
+    background:#fff; border:3px solid var(--ink); cursor:pointer; box-shadow:5px 5px 0 var(--ink); }
+  .tab.active{ color:#fff; }
+  .tab[data-tab="create"].active{ background:var(--red); }
+  .tab[data-tab="restore"].active{ background:var(--blue); }
+  .panel{ background:#fff; border:3px solid var(--ink); box-shadow:8px 8px 0 var(--ink); padding:18px; }
+  .hidden{ display:none !important; }
+  label{ font-weight:700; font-size:13px; letter-spacing:.06em; display:block; margin-bottom:6px; }
+  textarea{ width:100%; border:3px solid var(--ink); padding:10px; font-size:15px; line-height:1.6;
+    background:#fafaf7; background-color:#fafaf7; color:#141414; -webkit-text-fill-color:#141414;
+    caret-color:#141414; opacity:1; resize:vertical; font-family:inherit; }
+  textarea::placeholder{ color:#8a8578; -webkit-text-fill-color:#8a8578; }
+  textarea:focus{ outline:3px solid var(--yellow); }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .btn{ border:3px solid var(--ink); background:var(--ink); color:#fff; font-weight:700;
+    padding:11px 18px; font-size:15px; cursor:pointer; box-shadow:4px 4px 0 rgba(20,20,20,.35); }
+  .btn:active{ transform:translate(2px,2px); box-shadow:2px 2px 0 rgba(20,20,20,.35); }
+  .btn.yellow{ background:var(--yellow); color:var(--ink); }
+  .btn.white{ background:#fff; color:var(--ink); }
+  .btn.blue{ background:var(--blue); }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+  .stats{ font-size:13px; color:#333; margin:8px 0 0; line-height:1.7; }
+  .badge{ display:inline-block; padding:3px 10px; border:2px solid var(--ink); font-size:12px; font-weight:700; }
+  .badge.ok{ background:#bfe8c8; }
+  .badge.warn{ background:var(--yellow); }
+  .badge.ng{ background:#f6c1c1; }
+  .canvasbox{ text-align:center; margin-top:16px; }
+  canvas#stage{ width:min(78vw,520px); height:auto; border:3px solid var(--ink); background:#fff; }
+  .drop{ border:3px dashed var(--ink); padding:26px 14px; text-align:center; background:var(--white); cursor:pointer; }
+  .drop.over{ background:#fff3b0; }
+  .drop img{ max-width:min(78vw,420px); border:3px solid var(--ink); margin-top:12px; }
+  .note{ font-size:12.5px; color:#444; line-height:1.8; }
+  .spec{ margin-top:22px; background:#fff; border:3px solid var(--ink); padding:16px 18px; box-shadow:8px 8px 0 var(--ink); }
+  .spec h2{ font-size:15px; margin:0 0 8px; letter-spacing:.06em; }
+  .spec ul{ margin:0; padding-left:20px; font-size:13px; line-height:1.9; color:#333; }
+  .kv{ font-size:13px; line-height:1.8; }
+  .kv b{ background:var(--yellow); padding:0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>モンドリアンコンバーター</h1>
+  <div class="chips">
+    <div class="chip" style="background:var(--red)"></div>
+    <div class="chip" style="background:var(--blue)"></div>
+    <div class="chip" style="background:var(--yellow)"></div>
+    <div class="chip" style="background:#fff"></div>
+  </div>
+</header>
+<div class="wrap">
+
+  <div class="tabs">
+    <button class="tab active" data-tab="create" id="tabbtn-create">つくる（言葉 → 絵）</button>
+    <button class="tab" data-tab="restore" id="tabbtn-restore">ふくげん（絵 → 言葉）</button>
+  </div>
+
+  <!-- CREATE -->
+  <section class="panel" id="panel-create">
+    <label for="src-text">コンポジションにしたい言葉</label>
+    <textarea id="src-text" rows="4" placeholder="ここに言葉を入力（日本語・英語・記号なんでもOK）"></textarea>
+    <p class="stats" id="src-stats">0 文字</p>
+    <label style="margin-top:12px;">密度（マスの数）</label>
+    <div class="row" id="density-row">
+      <button class="btn white density-btn" data-mode="honke" style="box-shadow:none;">本家風（〜24マス）</button>
+      <button class="btn white density-btn" data-mode="normal" style="box-shadow:none;">ふつう（〜90マス）</button>
+      <button class="btn white density-btn" data-mode="dense" style="box-shadow:none;">高密度（〜420マス）</button>
+    </div>
+    <p class="stats">本家風は短い言葉専用です。入らない場合は自動で密度を上げて作ります。</p>
+    <div class="row" style="margin-top:12px;">
+      <button class="btn" id="btn-convert">コンポジションに変換</button>
+      <button class="btn yellow" id="btn-download" disabled>PNGを保存</button>
+      <button class="btn white" id="btn-selftest" disabled>この画像を復元してみる</button>
+    </div>
+    <p class="stats" id="convert-info"></p>
+    <div class="canvasbox"><canvas id="stage" width="800" height="800"></canvas></div>
+  </section>
+
+  <!-- RESTORE -->
+  <section class="panel hidden" id="panel-restore">
+    <label>コンポジションの画像（PNG推奨）</label>
+    <div class="drop" id="drop">
+      <div>ここに画像をドロップ、またはクリックして選択<br><span class="note">このコンバーターで作っていないコンポジションでも読み取れます（その場合、言葉ではなく意味不明な文字列になります）</span></div>
+      <img id="drop-preview" class="hidden" alt="">
+    </div>
+    <input type="file" id="file-input" accept="image/*" class="hidden">
+    <div class="row" style="margin-top:12px;">
+      <button class="btn blue" id="btn-decode" disabled>パターンを読み取って復元</button>
+      <button class="btn white" id="btn-random">ランダムなコンポジションで試す</button>
+    </div>
+    <p class="stats" id="decode-info"></p>
+    <label for="dst-text" style="margin-top:14px;">復元結果</label>
+    <textarea id="dst-text" rows="5" readonly placeholder="ここに復元された文字列が出ます"></textarea>
+    <div class="row" style="margin-top:10px;">
+      <button class="btn white" id="btn-copy" disabled>結果をコピー</button>
+    </div>
+  </section>
+
+  <div class="spec">
+    <h2>このコンバーターの仕様</h2>
+    <ul>
+      <li>復元は<b>画像のパターンだけ</b>から行います。画像への埋め込み（LSB）も、別ファイルのデータも使いません。</li>
+      <li>符号化: 分割の向き（1bit）＋ 分割位置（領域が大きいほど1〜6bit）＋ マスの色（2bit）。マスを少なく抑える代わりに、大きなマスの位置に多めの情報を載せています。分割位置は「子が細長くなりすぎない範囲」に限るので、薄切り状のマスはできにくくなっています。</li>
+      <li>圧縮は4方式（そのまま／deflate／カナ折り／カナ折り+deflate）を全部試して一番小さいものを採用。カナ折りは、ひらがな・カタカナがUTF-8で常に3バイトになる冗長を畳む可逆変換です。</li>
+      <li>線の太さはデータを持ちません。「その領域の分割線は、領域内に全幅で現れるどの線よりも太い」という決まりで描くので、太さの順序から元の分割構造をたどり直せます。</li>
+      <li>密度（本家風／ふつう／高密度）は作る側だけの都合で、復元は密度を知らなくても読めます。</li>
+      <li>だから、このコンバーターで作っていないコンポジションでも「パターンとして」読み取れます。ただし元の言葉にはならないので、意味不明な文字列が出ます。</li>
+      <li>保存は必ず<b>PNGのまま</b>で。JPEG化や縮小・スクリーンショットは線がぼけて、復元がずれる原因になります。</li>
+      <li>復元結果にはチェックサム照合の結果が付きます。一致すれば「その画像に込められた言葉そのもの」です。</li>
+    </ul>
+  </div>
+
+</div>
+<script>
+"use strict";
+/* ================= CODEC (pattern-only) ================= */
+const MC = (() => {
+  // 色: 0=白 1=赤 2=青 3=黄（各2bit）
+  const PALETTE = [[250,250,247],[227,6,19],[0,71,171],[255,207,0]];
+  const LINE = [20,20,20];
+  const MIN_CHILD = 28;   // 分割後の子の最小辺px（符号化・復元で共通の定数）
+  const MIN_SPLIT = 90;   // これ未満の辺は割らない
+  // ヘッダは可変長: mode2 + 回転3 + 長形式フラグ1 + len(8 or 16) + checksum8
+  // ペイロードが255バイト以下のとき長さを8bitで書いて7bit節約する。
+  // 「回転」はペイロードのバイト列をずらしてから載せる指定: ビット列とツリー形状の
+  // 相性（特定の位置に来る向きビットで詰む等）を、回転を変えて回避するためにある。
+  // 復元側はヘッダの回転分だけ戻すので、利用者は意識しない
+  const checksum = (bytes) => { let h = 0; for (const b of bytes) h = ((h * 31) ^ b) & 0xff; return h; };
+  function bytesToBits(bytes){ const bits=[]; for (const b of bytes) for (let i=7;i>=0;i--) bits.push((b>>i)&1); return bits; }
+  function rotateBytes(bytes, rot){
+    const len = bytes.length;
+    if (len <= 1) return bytes;
+    const r = ((rot % len) + len) % len;
+    if (r === 0) return bytes;
+    const out = new Uint8Array(len);
+    for (let i = 0; i < len; i++) out[i] = bytes[(i + r) % len];
+    return out;
+  }
+  // mode: 0=そのまま 1=deflate 2=カナ折り 3=カナ折り+deflate
+  function buildStreamBits(payload, mode, rot = 0){
+    const len = payload.length;
+    const r = len > 1 ? (rot % 8) % len : 0; // 回転は3bitで記録するので0〜7
+    const body = rotateBytes(payload, r);
+    const bits = [(mode>>1)&1, mode&1, (r>>2)&1, (r>>1)&1, r&1];
+    const long = len > 255 ? 1 : 0;
+    bits.push(long);
+    const nb = long ? 16 : 8;
+    for (let i = nb - 1; i >= 0; i--) bits.push((len >> i) & 1);
+    bits.push(...bytesToBits(body));
+    const cs = checksum(payload);
+    for (let i=7;i>=0;i--) bits.push((cs>>i)&1);
+    return bits;
+  }
+  // 子の形のアスペクト比の上限。分割線中心の可動範囲そのものにこの制約を織り込む:
+  // 範囲内のどの位置で割っても子のアスペクト比が上限以下になるよう範囲を決める。
+  // だから「データの値によっては割れない」という詰みが起きない。
+  // 範囲が空になる領域（すでに細長い帯を短辺方向に割る場合）だけが葉になる。
+  const MAX_ASPECT = 13;
+  // 分割線中心の可動範囲（符号化・復元で同じ式を使う）
+  function splitGeom(splitLen, other, t){
+    const lo = Math.max(MIN_CHILD + t / 2, splitLen * 0.20, other / MAX_ASPECT + t / 2);
+    const hi = Math.min(splitLen - MIN_CHILD - t / 2, splitLen * 0.80, splitLen - other / MAX_ASPECT - t / 2);
+    return [lo, hi];
+  }
+  // 可動範囲の広さ → 位置に載せるビット数（量子化幅が9px以上になる最大のk）
+  function kFromSpan(span){
+    if (span < 8) return 0;
+    return Math.max(1, Math.min(6, Math.floor(Math.log2(span / 9 + 1))));
+  }
+  // 線の太さの基準値（ジッター・増厚前の素の値）。
+  // 位置ビット数kはこの基準太さでの可動範囲から決める: 復元側も深さと辺の長さから
+  // 同じ値を再計算できるので、実際に描かれた太さが変わってもkは食い違わない
+  function tBaseFor(S, depth, splitLen){
+    return Math.max(6, Math.min(Math.round(S * 0.034), Math.round(S * 0.030 * Math.pow(0.85, depth)), Math.round(splitLen * 0.18)));
+  }
+
+  /* カナ折り: ひらがな・カタカナはUTF-8で E3 81/82/83 xx の3バイト。
+     先頭の冗長を畳んで 0xFF + 1バイト の2バイトにする可逆変換。
+     0xFFは正しいUTF-8には現れないのでマーカーに使える。 */
+  function foldKana(bytes){
+    const out = [];
+    for (let i = 0; i < bytes.length; i++){
+      if (bytes[i] === 0xE3 && i + 2 < bytes.length && bytes[i+1] >= 0x81 && bytes[i+1] <= 0x83 && bytes[i+2] >= 0x80 && bytes[i+2] <= 0xBF){
+        out.push(0xFF, (bytes[i+1] - 0x81) * 64 + (bytes[i+2] - 0x80));
+        i += 2;
+      } else out.push(bytes[i]);
+    }
+    return new Uint8Array(out);
+  }
+  function unfoldKana(bytes){
+    const out = [];
+    for (let i = 0; i < bytes.length; i++){
+      if (bytes[i] === 0xFF && i + 1 < bytes.length){
+        const v = bytes[i+1];
+        out.push(0xE3, 0x81 + Math.floor(v / 64), 0x80 + (v % 64));
+        i += 1;
+      } else out.push(bytes[i]);
+    }
+    return new Uint8Array(out);
+  }
+
+  // ビット列 → 分割ツリー。データは「向き1bit＋位置kbit＋色2bit」。
+  // 線の太さはデータを持たず、復元の不変条件（分割線は部分木内の全幅線より太い）を満たすよう決める。
+  function treeFromBits(streamBits, S, opt){
+    const { maxLeaves, maxDepth, variant } = opt;
+    const N = streamBits.length;
+    const read = (i) => i < N ? streamBits[i] : 0;
+    let pos = 0;
+    let rngState = ((variant * 1000) + 12345) >>> 0;
+    const rand = () => { rngState = (rngState + 0x6D2B79F5) >>> 0; let z = rngState; z = Math.imul(z ^ (z >>> 15), z | 1); z ^= z + Math.imul(z ^ (z >>> 7), z | 61); return ((z ^ (z >>> 14)) >>> 0) / 4294967296; };
+
+    function build(x, y, w, h, depth, budget){
+      const slotStart = pos;
+      let dir = -1, k = 0, idx = 0, tNode = 0;
+      if (budget >= 2 && pos < N && depth < maxDepth){
+        // 向きは必ずストリームのビットに従う（幾何がビットの唯一の記録なので、
+        // ここで逆向きに割るとそのビットが失われて復元がずれる）。
+        // その向きでは割れない領域（可動範囲が空）は、割らずに葉にする。
+        const d = read(pos);
+        const sl = d === 0 ? w : h;
+        if (sl >= MIN_SPLIT){
+          const other = d === 0 ? h : w;
+          const tBase = tBaseFor(S, depth, sl);
+          const [lo0, hi0] = splitGeom(sl, other, tBase);
+          const kk = kFromSpan(hi0 - lo0);
+          // 細長い子しか作れない分割は、容量が本当に必要な場合だけ許可する。
+          // 予算に余裕があるなら帯は帯のまま残した方がモンドリアンらしい
+          const worstAsp = Math.max(other / Math.max(1, lo0 - tBase / 2), (hi0 - tBase / 2) / other);
+          const hungry = budget * 4 >= (N - pos);
+          if (kk >= 1 && (worstAsp <= 7 || !strictOpt || hungry)){
+            let ii = 0; for (let i = 0; i < kk; i++) ii = (ii << 1) | read(pos + 1 + i);
+            // 線の太さは少し揺らす: variantごとに違う構図になり、詰みパターンを避けやすくなる
+            tNode = Math.max(6, Math.round(tBase * (0.85 + rand() * 0.35)));
+            dir = d; k = kk; idx = ii;
+          }
+        }
+      }
+      if (dir < 0){
+        const c = (read(pos) << 1) | read(pos + 1); pos += 2;
+        return { node:{leaf:true,x,y,w,h,color:c}, spV:[], spH:[] };
+      }
+      const splitLen = dir === 0 ? w : h;
+      pos += 1 + k;
+      const afterHeader = pos;
+      let t = tNode;
+      try {
+      for (let attempt = 0; attempt < 4; attempt++){
+        const [lo, hi] = splitGeom(splitLen, dir === 0 ? h : w, t);
+        // 実際の太さでの量子化幅が細かくなりすぎる場合は割るのを諦める（下で葉に落とす）
+        if (hi - lo < Math.max(8, 7 * (Math.pow(2, k) - 1))) throw new Error("infeasible");
+        const center = lo + (hi - lo) * idx / (Math.pow(2, k) - 1);
+        let a1 = Math.round(center - t / 2);
+        a1 = Math.min(splitLen - t - MIN_CHILD, Math.max(MIN_CHILD, a1));
+        const a2 = splitLen - t - a1;
+        // 葉の配分は子の面積比で決める: 細い帯に大量の葉を割り当てると、
+        // 帯の中で分割が詰まって容量が蒸発してしまうため
+        const areaA = dir === 0 ? a1 * h : w * a1;
+        const areaB = dir === 0 ? a2 * h : w * a2;
+        const frac = Math.min(0.92, Math.max(0.08, (areaA / (areaA + areaB)) * (0.85 + rand() * 0.3)));
+        const la = Math.min(budget - 1, Math.max(1, Math.round(budget * frac)));
+        const lb = budget - la;
+        const rectA = dir === 0 ? [x, y, a1, h] : [x, y, w, a1];
+        const rectB = dir === 0 ? [x + a1 + t, y, a2, h] : [x, y + a1 + t, w, a2];
+        pos = afterHeader;
+        const A = build(rectA[0], rectA[1], rectA[2], rectA[3], depth + 1, la);
+        const B = build(rectB[0], rectB[1], rectB[2], rectB[3], depth + 1, lb);
+        let belowMax = 0;
+        if (dir === 0){
+          for (const e of A.spV) belowMax = Math.max(belowMax, e.e - e.s);
+          for (const e of B.spV) belowMax = Math.max(belowMax, e.e - e.s);
+          for (const ha of A.spH) for (const hb of B.spH) belowMax = Math.max(belowMax, Math.min(ha.e, hb.e) - Math.max(ha.s, hb.s));
+        } else {
+          for (const e of A.spH) belowMax = Math.max(belowMax, e.e - e.s);
+          for (const e of B.spH) belowMax = Math.max(belowMax, e.e - e.s);
+          for (const va of A.spV) for (const vb of B.spV) belowMax = Math.max(belowMax, Math.min(va.e, vb.e) - Math.max(va.s, vb.s));
+        }
+        if (belowMax >= t){
+          const need = belowMax + 2;
+          if (need > splitLen - 2 * MIN_CHILD - 8 || attempt === 3) throw new Error("infeasible");
+          t = need;
+          continue;
+        }
+        let spV, spH;
+        if (dir === 0){
+          spV = [{s: x + a1, e: x + a1 + t}, ...A.spV, ...B.spV];
+          spH = [];
+          for (const ha of A.spH) for (const hb of B.spH){
+            const os = Math.max(ha.s, hb.s), oe = Math.min(ha.e, hb.e);
+            if (oe - os >= 1) spH.push({s: os, e: oe});
+          }
+        } else {
+          spH = [{s: y + a1, e: y + a1 + t}, ...A.spH, ...B.spH];
+          spV = [];
+          for (const va of A.spV) for (const vb of B.spV){
+            const os = Math.max(va.s, vb.s), oe = Math.min(va.e, vb.e);
+            if (oe - os >= 1) spV.push({s: os, e: oe});
+          }
+        }
+        return { node:{leaf:false, dir, x, y, w, h, t, A: A.node, B: B.node}, spV, spH };
+      }
+      throw new Error("infeasible");
+      } catch {
+        // この領域は分割を諦めて葉にする（全体を作り直すより容量の損失が小さい）
+        pos = slotStart;
+        const c = (read(pos) << 1) | read(pos + 1); pos += 2;
+        return { node:{leaf:true,x,y,w,h,color:c}, spV:[], spH:[] };
+      }
+    }
+
+    const budget0 = Math.min(maxLeaves, Math.ceil((N + 3) / 5) + 2);
+    // strict指定時は「細長い子を作る分割」を最後まで避ける（呼び出し側が
+    // まずstrictで全体を試し、入らなければ緩めて試す二段構えにする）
+    const strictOpt = opt.strict === true;
+    for (let scale = 1; scale <= 9; scale++){
+      pos = 0;
+      const budget = Math.min(maxLeaves, Math.round(budget0 * Math.pow(1.4, scale - 1)));
+      try {
+        const built = build(0, 0, S, S, 0, budget);
+        if (pos >= N){
+          let realLeaves = 0, realMin = Infinity;
+          (function walk(n){ if (n.leaf){ realLeaves++; realMin = Math.min(realMin, n.w, n.h); } else { walk(n.A); walk(n.B); } })(built.node);
+          return { tree: built.node, minDim: realMin, leafCount: realLeaves, slots: pos };
+        }
+      } catch { /* 収まらなければ予算を増やして再試行 */ }
+    }
+    throw new Error("infeasible");
+  }
+
+  function renderToBuffer(tree, S){
+    const buf = new Uint8Array(S*S*3);
+    for (let i=0;i<S*S;i++){ buf[i*3]=LINE[0]; buf[i*3+1]=LINE[1]; buf[i*3+2]=LINE[2]; }
+    (function fill(node){
+      if (node.leaf){
+        const c = PALETTE[node.color];
+        for (let y=node.y; y<node.y+node.h; y++) for (let x=node.x; x<node.x+node.w; x++){
+          const o=(y*S+x)*3; buf[o]=c[0]; buf[o+1]=c[1]; buf[o+2]=c[2];
+        }
+      } else { fill(node.A); fill(node.B); }
+    })(tree);
+    return { sample:(x,y)=>{ const o=(y*S+x)*3; return [buf[o],buf[o+1],buf[o+2]]; }, W:S, H:S };
+  }
+  function drawToCanvas(tree, S, canvas){
+    canvas.width = S; canvas.height = S;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = `rgb(${LINE[0]},${LINE[1]},${LINE[2]})`;
+    ctx.fillRect(0,0,S,S);
+    (function fill(node){
+      if (node.leaf){ const c=PALETTE[node.color]; ctx.fillStyle=`rgb(${c[0]},${c[1]},${c[2]})`; ctx.fillRect(node.x,node.y,node.w,node.h); }
+      else { fill(node.A); fill(node.B); }
+    })(tree);
+  }
+
+  const isDark = (p) => { const mx=Math.max(p[0],p[1],p[2]), mn=Math.min(p[0],p[1],p[2]); return mx<70 && (mx-mn)<30; };
+
+  function classifyLeaf(sample,x0,y0,x1,y1){
+    const ix0=x0+(x1-x0)*0.22, ix1=x1-(x1-x0)*0.22, iy0=y0+(y1-y0)*0.22, iy1=y1-(y1-y0)*0.22;
+    let r=0,g=0,b=0,n=0;
+    const sx=Math.max(1,Math.floor((ix1-ix0)/8)), sy=Math.max(1,Math.floor((iy1-iy0)/8));
+    for (let y=iy0;y<iy1;y+=sy) for (let x=ix0;x<ix1;x+=sx){ const p=sample(Math.floor(x),Math.floor(y)); r+=p[0]; g+=p[1]; b+=p[2]; n++; }
+    if (!n) { const p=sample(Math.floor((x0+x1)/2),Math.floor((y0+y1)/2)); r=p[0]; g=p[1]; b=p[2]; n=1; }
+    r/=n; g/=n; b/=n;
+    let best=0, bd=Infinity;
+    for (let i=0;i<4;i++){ const c=PALETTE[i]; const d=(r-c[0])**2+(g-c[1])**2+(b-c[2])**2; if (d<bd){ bd=d; best=i; } }
+    return best;
+  }
+
+  function scanCandidates(sample,x0,y0,x1,y1,vertical){
+    const len = vertical ? (x1-x0) : (y1-y0);
+    const span = vertical ? (y1-y0) : (x1-x0);
+    if (len<3 || span<3) return [];
+    const frac = new Array(len).fill(0);
+    for (let i=0;i<len;i++){
+      let cnt=0;
+      for (let j=0;j<span;j++){ const p = vertical ? sample(x0+i,y0+j) : sample(x0+j,y0+i); if (isDark(p)) cnt++; }
+      frac[i]=cnt/span;
+    }
+    const cand=[]; let s=-1;
+    for (let i=0;i<=len;i++){
+      const on = i<len && frac[i]>=0.90;
+      if (on && s<0) s=i;
+      if (!on && s>=0){ const e=i-1; let cov=0; for (let k=s;k<=e;k++) cov+=frac[k]; cand.push({start:s,end:e,thick:e-s+1,center:(s+e)/2,cover:cov/(e-s+1)}); s=-1; }
+    }
+    return cand;
+  }
+
+  // 画像のパターンだけからビット列を読み取る（この形式で作られていない画像でも動く）
+  function readBits(sample,W,H){
+    const bits=[];
+    function analyze(x0,y0,x1,y1,depth){
+      const w=x1-x0, h=y1-y0;
+      if (w<3 || h<3 || depth>40){ pushColor(x0,y0,x1,y1); return; }
+      const vc = scanCandidates(sample,x0,y0,x1,y1,true);
+      const hc = scanCandidates(sample,x0,y0,x1,y1,false);
+      let best=null, bestDir=0;
+      for (const c of vc) if (!best || c.thick>best.thick || (c.thick===best.thick && c.cover>best.cover)) { best=c; bestDir=0; }
+      for (const c of hc) if (!best || c.thick>best.thick || (c.thick===best.thick && c.cover>best.cover)) { best=c; bestDir=1; }
+      if (best && best.thick>=3 && best.cover>=0.88){
+        bits.push(bestDir);
+        const splitLen = bestDir===0 ? w : h;
+        const t = best.thick;
+        const [lo, hi] = splitGeom(splitLen, bestDir === 0 ? h : w, t);
+        const [loB, hiB] = splitGeom(splitLen, bestDir === 0 ? h : w, tBaseFor(W, depth, splitLen));
+        const k = kFromSpan(hiB - loB);
+        let idx = 0;
+        if (k > 0 && hi > lo){
+          idx = Math.round((best.center - lo) / (hi - lo) * (Math.pow(2, k) - 1));
+          idx = Math.min(Math.pow(2, k) - 1, Math.max(0, idx));
+        }
+        for (let i = k - 1; i >= 0; i--) bits.push((idx >> i) & 1);
+        if (bestDir===0){
+          analyze(x0, y0, x0+best.start, y1, depth+1);
+          analyze(x0+best.end+1, y0, x1, y1, depth+1);
+        } else {
+          analyze(x0, y0, x1, y0+best.start, depth+1);
+          analyze(x0, y0+best.end+1, x1, y1, depth+1);
+        }
+      } else pushColor(x0,y0,x1,y1);
+    }
+    function pushColor(x0,y0,x1,y1){ const c=classifyLeaf(sample,x0,y0,x1,y1); bits.push((c>>1)&1, c&1); }
+    analyze(0,0,W,H,0);
+    return bits;
+  }
+
+  function parseStream(bits){
+    if (bits.length < 22) return { ok:false, reason:"パターンから十分なビットが読み取れませんでした", bitCount:bits.length };
+    const mode = (bits[0]<<1) | bits[1];
+    const rot = (bits[2]<<2) | (bits[3]<<1) | bits[4];
+    const nb = bits[5] ? 16 : 8;
+    const headerBits = 6 + nb + 8; // mode2 + rot3 + flag1 + len + checksum8
+    let declared=0; for (let i=0;i<nb;i++) declared=(declared<<1)|bits[6+i];
+    const availBytes = Math.floor((bits.length-headerBits)/8);
+    const truncated = declared > availBytes;
+    const len = Math.min(declared, Math.max(0, availBytes));
+    const start = 6 + nb;
+    const body = new Uint8Array(len);
+    for (let i=0;i<len;i++){ let v=0; for (let j=0;j<8;j++) v=(v<<1)|bits[start+i*8+j]; body[i]=v; }
+    const payload = rotateBytes(body, -rot); // 回転を戻す
+    let csRead=null;
+    if (!truncated && bits.length >= start+len*8+8){ let v=0; for (let j=0;j<8;j++) v=(v<<1)|bits[start+len*8+j]; csRead=v; }
+    return { ok:true, mode, rot, declared, truncated, payload,
+      checksumOk: csRead!==null && csRead===checksum(payload), bitCount:bits.length };
+  }
+
+  function decodeFromSampler(sample,W,H){ return parseStream(readBits(sample,W,H)); }
+  return { PALETTE, LINE, buildStreamBits, foldKana, unfoldKana, splitGeom, kFromSpan, treeFromBits, renderToBuffer, drawToCanvas, decodeFromSampler, checksum };
+})();
+
+/* ================= compression helpers ================= */
+async function deflateBytes(bytes){
+  if (typeof CompressionStream === "undefined") return null;
+  try {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch { return null; }
+}
+async function inflateBytes(bytes){
+  if (typeof DecompressionStream === "undefined") return null;
+  try {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch { return null; }
+}
+async function payloadToText(parsed){
+  let bytes = parsed.payload;
+  if (parsed.mode === 1 || parsed.mode === 3){ const inf = await inflateBytes(bytes); if (inf) bytes = inf; else return { text:"", error:"圧縮データの展開に失敗しました" }; }
+  if (parsed.mode === 2 || parsed.mode === 3){ bytes = MC.unfoldKana(bytes); }
+  try { return { text:new TextDecoder("utf-8",{fatal:true}).decode(bytes), exact:true }; }
+  catch { return { text:new TextDecoder("utf-8").decode(bytes), exact:false }; }
+}
+</script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const stage = $("stage");
+let lastTree = null, lastPayload = null, lastFlag = false, lastS = 0;
+let restoreSampler = null, restoreSize = null;
+
+/* tabs */
+function switchTab(name){
+  for (const b of document.querySelectorAll(".tab")) b.classList.toggle("active", b.dataset.tab===name);
+  $("panel-create").classList.toggle("hidden", name!=="create");
+  $("panel-restore").classList.toggle("hidden", name!=="restore");
+}
+$("tabbtn-create").onclick = () => switchTab("create");
+$("tabbtn-restore").onclick = () => switchTab("restore");
+
+/* create: stats */
+const enc = new TextEncoder();
+function refreshStats(){
+  const t = $("src-text").value;
+  const bytes = enc.encode(t).length;
+  $("src-stats").textContent = t.length ? `${t.length} 文字 / UTF-8 ${bytes} バイト` : "0 文字";
+}
+$("src-text").addEventListener("input", refreshStats);
+
+function samplerFromCanvas(cv){
+  const ctx = cv.getContext("2d", { willReadFrequently:true });
+  const img = ctx.getImageData(0,0,cv.width,cv.height);
+  const d = img.data, W = cv.width;
+  return { sample:(x,y)=>{ const o=(y*W+x)*4; return [d[o],d[o+1],d[o+2]]; }, W:cv.width, H:cv.height };
+}
+const bytesEqual = (a,b) => a && b && a.length===b.length && a.every((v,i)=>v===b[i]);
+
+/* 密度モード: 復元側はモードを知らなくても読める（密度は作る側だけの都合） */
+const MODES = {
+  honke:  { label:"本家風", S:1200, maxLeaves:24,  maxDepth:6 },
+  normal: { label:"ふつう", S:1000, maxLeaves:90,  maxDepth:7 },
+  dense:  { label:"高密度", S:1400, maxLeaves:420, maxDepth:10 },
+};
+const MODE_ORDER = ["honke", "normal", "dense"];
+let selectedMode = "honke";
+function refreshDensityButtons(){
+  for (const b of document.querySelectorAll(".density-btn"))
+    b.style.background = b.dataset.mode === selectedMode ? "var(--yellow)" : "#fff";
+}
+for (const b of document.querySelectorAll(".density-btn"))
+  b.onclick = () => { selectedMode = b.dataset.mode; refreshDensityButtons(); };
+refreshDensityButtons();
+
+const MODE_NAMES = ["そのまま", "deflate圧縮", "カナ折り", "カナ折り+deflate"];
+$("btn-convert").onclick = async () => {
+  const text = $("src-text").value;
+  const info = $("convert-info");
+  if (!text){ info.textContent = "まず言葉を入力してください。"; return; }
+  info.textContent = "変換中…";
+  // 可逆圧縮: 4方式を全部試して一番小さいものを選ぶ
+  const raw = enc.encode(text);
+  const folded = MC.foldKana(raw);
+  const candidates = [
+    { mode:0, data:raw },
+    { mode:2, data:folded },
+  ];
+  const d1 = await deflateBytes(raw);    if (d1) candidates.push({ mode:1, data:d1 });
+  const d2 = await deflateBytes(folded);  if (d2) candidates.push({ mode:3, data:d2 });
+  candidates.sort((a,b) => a.data.length - b.data.length);
+  const { mode, data:payload } = candidates[0];
+  // 選んだ密度から始めて、入らなければ密度を上げていく。
+  // ビット列とツリー形状の相性で詰む場合は、ペイロードの回転（バイト列のずらし）を
+  // 変えると相性が変わるので、回転も総当たりする
+  let built = null, usedMode = null, usedBits = null;
+  // まず「細長いマスを作らない」strictで全組み合わせを試し、
+  // 入らなければ形の制約を緩めてもう一周する
+  outer:
+  for (const strict of [true, false]) {
+    for (const mk of MODE_ORDER.slice(MODE_ORDER.indexOf(selectedMode))) {
+      const M = MODES[mk];
+      const rots = Math.min(8, Math.max(1, payload.length));
+      for (let rot = 0; rot < rots; rot++) {
+        const bits = MC.buildStreamBits(payload, mode, rot);
+        for (const variant of [0.5, 0.43, 0.57, 0.37, 0.63]) {
+          let b = null;
+          try { b = MC.treeFromBits(bits, M.S, { maxLeaves:M.maxLeaves, maxDepth:M.maxDepth, variant, strict }); } catch { b = null; }
+          if (!b) continue;
+          const buf = MC.renderToBuffer(b.tree, M.S);
+          const dec = MC.decodeFromSampler(buf.sample, buf.W, buf.H);
+          if (dec.ok && !dec.truncated && dec.checksumOk && bytesEqual(dec.payload, payload)){
+            built = b; usedMode = mk; usedBits = bits; break outer;
+          }
+        }
+      }
+    }
+  }
+  if (!built || !usedMode){
+    info.innerHTML = `<span class="badge ng">どの密度でも収まりませんでした</span><br>圧縮後 ${payload.length} バイトあります。言葉を短く分けてください。`;
+    return;
+  }
+  MC.drawToCanvas(built.tree, MODES[usedMode].S, stage);
+  lastTree = built.tree; lastPayload = payload; lastS = stage.width;
+  $("btn-download").disabled = false;
+  $("btn-selftest").disabled = false;
+  const escalated = usedMode !== selectedMode ? `（${MODES[selectedMode].label}には入らなかったので${MODES[usedMode].label}で作りました）` : "";
+  info.innerHTML =
+    `画像 ${stage.width}×${stage.height} / マス ${built.leafCount} 個 / 密度: ${MODES[usedMode].label}${escalated}<br>` +
+    `圧縮: ${MODE_NAMES[mode]} で ${raw.length} → ${payload.length} バイト / 収録 ${usedBits.length} bit<br>` +
+    `<span class="badge ok">自己検証OK：この画像から元の言葉が復元できます</span>`;
+};
+
+$("btn-download").onclick = () => {
+  stage.toBlob((blob) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "mondrian.png";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }, "image/png");
+};
+
+$("btn-selftest").onclick = () => {
+  const s = samplerFromCanvas(stage);
+  restoreSampler = s; restoreSize = { W:s.W, H:s.H };
+  $("drop-preview").src = stage.toDataURL("image/png");
+  $("drop-preview").classList.remove("hidden");
+  $("btn-decode").disabled = false;
+  switchTab("restore");
+  runDecode();
+};
+
+/* restore: load image */
+function setRestoreImage(img){
+  const maxSide = 2600;
+  const scale = Math.min(1, maxSide/Math.max(img.naturalWidth, img.naturalHeight));
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, Math.round(img.naturalWidth*scale));
+  cv.height = Math.max(1, Math.round(img.naturalHeight*scale));
+  const ctx = cv.getContext("2d", { willReadFrequently:true });
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.drawImage(img, 0, 0, cv.width, cv.height);
+  const s = samplerFromCanvas(cv);
+  restoreSampler = s; restoreSize = { W:s.W, H:s.H };
+  $("drop-preview").src = img.src;
+  $("drop-preview").classList.remove("hidden");
+  $("btn-decode").disabled = false;
+  $("decode-info").textContent = `読み込みました（${s.W}×${s.H}）。「パターンを読み取って復元」を押してください。`;
+}
+function loadFile(file){
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => setRestoreImage(img);
+  img.onerror = () => { $("decode-info").textContent = "画像として読み込めませんでした。"; };
+  img.src = url;
+}
+$("drop").onclick = () => $("file-input").click();
+$("file-input").onchange = (e) => loadFile(e.target.files[0]);
+$("drop").ondragover = (e) => { e.preventDefault(); $("drop").classList.add("over"); };
+$("drop").ondragleave = () => $("drop").classList.remove("over");
+$("drop").ondrop = (e) => { e.preventDefault(); $("drop").classList.remove("over"); loadFile(e.dataTransfer.files[0]); };
+
+async function runDecode(){
+  if (!restoreSampler) return;
+  const info = $("decode-info");
+  info.textContent = "読み取り中…（大きい画像では少し時間がかかります）";
+  await new Promise(r => setTimeout(r, 30));
+  const dec = MC.decodeFromSampler(restoreSampler.sample, restoreSize.W, restoreSize.H);
+  if (!dec.ok){ info.innerHTML = `<span class="badge ng">${dec.reason}</span>`; $("dst-text").value=""; return; }
+  const res = await payloadToText(dec);
+  $("dst-text").value = res.text || "";
+  $("btn-copy").disabled = !res.text;
+  let badge;
+  if (dec.checksumOk && res.exact) badge = `<span class="badge ok">チェックサム一致：この画像に込められた言葉そのものです</span>`;
+  else if (dec.truncated) badge = `<span class="badge warn">途中で切れました：画像のパターン量に対して申告サイズが大きすぎます（この形式で作られた画像ではない可能性）</span>`;
+  else badge = `<span class="badge warn">パターンとしては読み取れましたが、元の言葉とは限りません（チェックサム不一致／この形式で作られた画像ではない可能性）</span>`;
+  info.innerHTML = `${badge}<br>読み取り ${dec.bitCount} bit / データ ${dec.payload.length} バイト（圧縮方式${dec.mode}）`;
+}
+$("btn-decode").onclick = runDecode;
+
+$("btn-random").onclick = async () => {
+  // このコンバーターで作っていないコンポジションの例: ランダムなビット列から絵だけを作る
+  const M = MODES.normal;
+  let built = null;
+  for (let tries = 0; tries < 6 && !built; tries++) {
+    const bits = []; const n = 30;
+    const rnd = new Uint8Array(n); crypto.getRandomValues(rnd);
+    for (const b of rnd) for (let i=7;i>=0;i--) bits.push((b>>i)&1);
+    for (const variant of [0.5, 0.43, 0.57, 0.37, 0.63]) { try { built = MC.treeFromBits(bits, M.S, { maxLeaves:M.maxLeaves, maxDepth:M.maxDepth, variant }); } catch { built = null; } if (built) break; }
+  }
+  if (!built) return;
+  const cv = document.createElement("canvas");
+  MC.drawToCanvas(built.tree, M.S, cv);
+  const s = samplerFromCanvas(cv);
+  restoreSampler = s; restoreSize = { W:s.W, H:s.H };
+  $("drop-preview").src = cv.toDataURL("image/png");
+  $("drop-preview").classList.remove("hidden");
+  $("btn-decode").disabled = false;
+  switchTab("restore");
+  runDecode();
+};
+
+$("btn-copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("dst-text").value); $("btn-copy").textContent = "コピーしました"; setTimeout(()=>$("btn-copy").textContent="結果をコピー", 1500); } catch {}
+};
+
+/* 初期表示: 例として描いておく（入る密度を探す） */
+(() => {
+  const bits = MC.buildStreamBits(MC.foldKana(enc.encode("モンドリアン")), 2);
+  for (const mk of MODE_ORDER) {
+    const M = MODES[mk];
+    try {
+      const { tree } = MC.treeFromBits(bits, M.S, { maxLeaves:M.maxLeaves, maxDepth:M.maxDepth, variant:0.5 });
+      MC.drawToCanvas(tree, M.S, stage);
+      return;
+    } catch { /* 次の密度で試す */ }
+  }
+})();
+refreshStats();
+</script>
+</body>
+</html>
